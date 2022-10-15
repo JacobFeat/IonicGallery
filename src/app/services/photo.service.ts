@@ -8,6 +8,8 @@ import {
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Preferences } from '@capacitor/preferences';
 import { UserPhoto } from './photo.defs';
+import { Platform } from '@ionic/angular';
+import { Capacitor } from '@capacitor/core';
 
 @Injectable({
   providedIn: 'root',
@@ -16,7 +18,7 @@ export class PhotoService {
   photos: UserPhoto[] = [];
   private PHOTO_STORAGE = 'photos';
 
-  constructor() {}
+  constructor(private platform: Platform) {}
 
   async addNewToGallery() {
     const capturedPhoto = await Camera.getPhoto({
@@ -46,17 +48,32 @@ export class PhotoService {
       directory: Directory.Data,
     });
 
-    return {
-      filepath: fileName,
-      webviewPath: photo.webPath,
-    };
+    if (this.platform.is('hybrid')) {
+      return {
+        filepath: savedFile.uri,
+        webviewPath: Capacitor.convertFileSrc(savedFile.uri),
+      };
+    } else {
+      return {
+        filepath: fileName,
+        webviewPath: photo.webPath,
+      };
+    }
   }
 
   private async readAsBase64(photo: Photo) {
-    const response = await fetch(photo.webPath!);
-    const blob = await response.blob();
+    if (this.platform.is('hybrid')) {
+      const file = await Filesystem.readFile({
+        path: photo.path,
+      });
 
-    return (await this.convertBlobToBase64(blob)) as string;
+      return file.data;
+    } else {
+      const response = await fetch(photo.webPath);
+      const blob = await response.blob();
+
+      return (await this.convertBlobToBase64(blob)) as string;
+    }
   }
 
   private convertBlobToBase64 = (blob: Blob) =>
@@ -73,15 +90,15 @@ export class PhotoService {
     const photoList = await Preferences.get({ key: this.PHOTO_STORAGE });
     this.photos = JSON.parse(photoList.value) || [];
 
-    for (let photo of this.photos) {
-      const readFile = await Filesystem.readFile({
-        path: photo.filepath,
-        directory: Directory.Data,
-      });
+    if (!this.platform.is('hybrid')) {
+      for (let photo of this.photos) {
+        const readFile = await Filesystem.readFile({
+          path: photo.filepath,
+          directory: Directory.Data,
+        });
 
-      photo.webviewPath = `data:image/jpeg;base64,${readFile.data}`;
+        photo.webviewPath = `data:image/jpeg;base64,${readFile.data}`;
+      }
     }
-
-
   }
 }
